@@ -3,9 +3,9 @@
 
 # -- author: Nikolay Ivanov --
 
-import requests, time
+import requests, time, csv
 from bs4 import BeautifulSoup as bs
-from lxml import html
+
 
 payload = {
     'rubric': 'flats',
@@ -33,58 +33,65 @@ def pars_data(url, page=1, district='1306589'):
         'has_balcony': 'True',
         'page': page
     }
+    response = requests.get(url, params = payload).text
+    soup = bs(response, features="lxml")
+    search_result = soup.find('div', {'class': 'search-content__results'})
+    find_items = search_result.find_all('div', {'class': 'living-list-card'})
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:45.0) Gecko/20100101 Firefox/45.0'
-    }
-    response = requests.get(url, params=payload)
+    results = []
+    for item in find_items:
+        room_link = ('https://n1.ru{}'.format(item.find('div', {'class': 'living-list-card__title'}).find('a').get('href')))
+        room_adress = item.find('span', {'class': 'living-list-card-title__text'}).text
+        room_district = item.find('div', {'class': 'search-item-district'}).text
+        room_city = item.find('span', {'class': 'living-list-card-city-with-estate__item'}).text
+        room_size = item.find('div', {'class': 'living-list-card__area'}).text
+        room_price = item.find('div', {'class': 'living-list-card-price__item _object'}).text
 
-    list_html= response.text.split(sep='"')
-    pars_url = []
-    out_url = []
-    for item in list_html:
-        if item.find('arhangelsk.n1.ru/view/') != -1:
-            item_in_out = False
-            for string in pars_url:
-                if string == item:
-                    item_in_out = True
-                    break
-            if item_in_out == False:
-                pars_url.append(item)
-    out_url.extend(pars_url)
-    print('Скачано ссылок: ' + str(len(pars_url)))
-    if len(pars_url) != 0:
+        to_skip = False
+        for room in results:
+            if room_link == room.get('ссылка'):
+                print('Это объявление уже есть')
+                to_skip = True
+                break
+        if to_skip:
+            continue
+        date_of_publication = bs(requests.get(room_link).text, features="lxml").find('p', {'class': 'card-living-content__state'}).text
+
+        item_data = {
+            'ссылка': room_link,
+            'адрес': room_adress,
+            'район': room_district,
+            'город': room_city,
+            'площадь': room_size,
+            'цена': room_price,
+            'дата публикации': date_of_publication[36:]
+                    }
+        print(item_data)
+        results.append(item_data)
+
+    if len(find_items) != 0:
         page += 1
         time.sleep(1)
-        out_url.extend(pars_data(url, page))
-    return(out_url)
+        results.extend(pars_data(url, page, district))
+    return results
 
-def compare_links(file, parsed_links):
-    old_links = []
-    unicue_links = []
-    with open(file, 'r', encoding='utf-8') as opened_file:
-        for line in opened_file:
-            old_links.append(line)
-    for item in parsed_links:
-        unic_flag = True
-        for old_item in old_links:
-            if old_item.find(item) != -1:
-                unic_flag = False
-        if unic_flag == True:
-            unicue_links.append(item)
-    with open(file, 'a', encoding='utf-8') as opened_file:
-        for item in unicue_links:
-            opened_file.write('\n'+item)
-    return unicue_links
+def save_to_data_csv(input_results):
+    data_list = []
+    for dict in input_results:
+        data_list.append(list(dict.values()))
+    print(data_list)
+    with open('data.csv', 'w') as data_csv:
+        pass
+
 
 def send_new_links(links):
     pass
 
 if __name__ == "__main__":
+    save_to_data_csv([{'1': 'foo', '2': 'baar'}, {'4': 'brrr', '5': 'aaaa'}])
     parsed_links = pars_data('https://arhangelsk.n1.ru/search/', 1, district='1306589')
-    new_unicue_links = compare_links('links_n1.txt', parsed_links)
-    print(new_unicue_links)
+    print(len(parsed_links))
+    parsed_links_2 = pars_data('https://arhangelsk.n1.ru/search/', 1, district='1306590')
+    print(len(parsed_links_2))
 
-    parsed_links = pars_data('https://arhangelsk.n1.ru/search/', 1, district='1306590                     ')
-    new_unicue_links = compare_links('links_n1.txt', parsed_links)
-    print(new_unicue_links)
+    to_save_data = parsed_links.extend(parsed_links_2)
